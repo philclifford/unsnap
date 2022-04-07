@@ -14,6 +14,7 @@ cervisia,org.kde.cervisia
 chromium,org.chromium.Chromium
 clion,com.jetbrains.CLion
 code,com.visualstudio.code
+darktable,org.darktable.Darktable
 datagrip,com.jetbrains.DataGrip
 digikam,org.kde.digikam
 discord,com.discordapp.Discord
@@ -50,8 +51,10 @@ goland,com.jetbrains.GoLand
 granatier,org.kde.granatier
 gwenview,org.kde.gwenview
 inkscape,org.inkscape.Inkscape
+insomnia,rest.insomnia.Insomnia
 intellij-idea-community,com.jetbrains.IntelliJ-IDEA-Community
 intellij-idea-ultimate,com.jetbrains.IntelliJ-IDEA-Ultimate
+joplin-desktop,net.cozic.joplin_desktop
 kalgebra,org.kde.kalgebra
 kalzium,org.kde.kalzium
 kanagram,org.kde.kanagram
@@ -115,6 +118,7 @@ lbry,io.lbry.lbry-app
 libreoffice,org.libreoffice.LibreOffice
 liferea,net.sourceforge.liferea
 love2d,org.love2d.love2d
+mattermost-desktop,com.mattermost.Desktop
 mindustry,com.github.Anuken.Mindustry
 minuet,org.kde.minuet
 mumble,info.mumble.Mumble
