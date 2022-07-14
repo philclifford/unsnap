@@ -3,8 +3,19 @@
 # unsnap - a tool to migrate away from snaps
 # shellcheck disable=SC2129
 
+# Define some ANSI colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+WHITE='\033[0;37m'
+NC='\033[0m' # No Color
+
+
 function display_warnings() {
-    echo "WARNING! Care has been taken to ensure this script is safe."
+    echo -e "${YELLOW}WARNING:${NC} Care has been taken to ensure this script is safe."
     echo "The generated scripts will remove applications and data."
     echo "Please ensure you have backups in case you need to recover data."
     echo "Also note significant disk space may be required to migrate,"
@@ -29,8 +40,8 @@ function setup_environment() {
     REMOVESNAPDSCRIPT="$LOGDIR/99-remove-snapd"
     SHEBANG="#!/usr/bin/env bash"
     RECOMMENDREBOOT="no"
-    REBOOTTEXT="WARNING: Please logout/in or reboot, to ensure applications appear in your desktop menu"
-    DISTRO="unknown"
+    REBOOTTEXT="${YELLOW}WARNING:${NC} Please logout/in or reboot, to ensure applications appear in your desktop menu"
+    PACKAGEMGR="unknown"
 }
 
 function create_logdir() {
@@ -39,7 +50,7 @@ function create_logdir() {
 
 function audit_snap() {
     # TODO: Change these to not require snap, but use a reliable API instead
-    if snap info "$1" > /dev/null 2>&1; then 
+    if snap info "$1" > /dev/null 2>&1; then
         RESULT="✔ "
     else
         RESULT="✖ "
@@ -50,7 +61,7 @@ function audit_snap() {
 function audit_flatpak() {
     # Check if a flatpak exists in the currently configured remotes
     # TODO: Change these to not require flatpak execution, but use a reliable API instead
-    if flatpak search "$1" > /dev/null; then 
+    if flatpak search "$1" > /dev/null; then
         RESULT="✔ "
     else
         RESULT="✖ "
@@ -60,7 +71,7 @@ function audit_flatpak() {
 
 function check_applist() {
     # Called by 'unsnap check'
-    # Iterates through the csv file containing mapping of snap,flatpak to see 
+    # Iterates through the csv file containing mapping of snap,flatpak to see
     # if the snap and flatpak actually exist on the snap store and flathub
     # This should really only be used by developers of unsnap, to verify that the
     # applist.csv data is sane/valid
@@ -78,16 +89,16 @@ function check_for_snap() {
     # Check for the existence of a an executable snap binary.
     # If snap doesn't exist or work, likelyhood is no snaps are installed either
     # so we exit out.
-    echo "INFO: Checking for snap binary"  | tee -a "$LOGFILE"
+    echo -e "${GREEN}INFO:${NC} Checking for snap binary"  | tee -a "$LOGFILE"
     if [ -x "$(command -v snap)" ]; then
-        echo "INFO: snap found" | tee -a "$LOGFILE"
+        echo -e "${GREEN}INFO:${NC} snap found" | tee -a "$LOGFILE"
     else
-        echo "ERROR: snapd doesn't appear to be installed, exiting." | tee -a "$LOGFILE"
+       echo -e "${RED}ERROR:${NC} snapd doesn't appear to be installed, exiting." | tee -a "$LOGFILE"
         exit 1
     fi
-    echo "INFO: Check for any snaps installed" | tee -a "$LOGFILE"
-    if [ "$(snap list | wc -l)" == "0" ]; then 
-        echo "ERROR: No snaps installed, nothing to do here!" | tee -a "$LOGFILE"
+    echo -e "${GREEN}INFO:${NC} Check for any snaps installed" | tee -a "$LOGFILE"
+    if [ "$(snap list | wc -l)" == "0" ]; then
+       echo -e "${RED}ERROR:${NC} No snaps installed, nothing to do here!" | tee -a "$LOGFILE"
         exit 6
     fi
 }
@@ -97,19 +108,48 @@ function generate_flatpak_install_script() {
     # As flatpak binary may not be installed (especially on Ubuntu and some derivatives)
     # TODO: We assume use of sudo here, which we really shouldn't, but instead tell user
     # to run script using sudo or root.
-    echo "INFO: Generating flatpak installer script in $INSTALLFLATPACKSCRIPT" | tee -a "$LOGFILE"
+    echo -e "${GREEN}INFO:${NC} Generating flatpak installer script in $INSTALLFLATPACKSCRIPT" | tee -a "$LOGFILE"
     echo "$SHEBANG" > "$INSTALLFLATPACKSCRIPT"
-    case $DISTRO in
-        debian|ubuntu|linuxmint|pop|elementary|zorin)
+    echo "# Documentation: https://flatpak.org/setup/" >> "$INSTALLFLATPACKSCRIPT"
+    case $PACKAGEMGR in
+        apt)
         cat <<EOT >> "$INSTALLFLATPACKSCRIPT"
-# Documentation: https://flatpak.org/setup/
 sudo apt update
 sudo apt install -y flatpak
 # sudo apt install gnome-software-plugin-flatpak
 EOT
             ;;
+        pacman)
+        cat <<EOT >> "$INSTALLFLATPACKSCRIPT"
+sudo pacman -Syu
+sudo pacman -S flatpak
+EOT
+            ;;
+        zypper)
+        cat <<EOT >> "$INSTALLFLATPACKSCRIPT"
+sudo zypper refresh
+sudo zypper install flatpak
+EOT
+            ;;
+        dnf)
+        cat <<EOT >> "$INSTALLFLATPACKSCRIPT"
+sudo dnf update
+sudo dnf install flatpak
+EOT
+            ;;
+        yum)
+        cat <<EOT >> "$INSTALLFLATPACKSCRIPT"
+sudo yum update
+sudo yum install flatpak
+EOT
+            ;;
+        eopkg)
+        cat <<EOT >> "$INSTALLFLATPACKSCRIPT"
+sudo eopkg install flatpak
+EOT
+            ;;
         *)
-            echo "ERROR: Unable to generate flatpak install script. Unimplemented distro." | tee -a "$LOGFILE"
+           echo -e "${RED}ERROR:${NC} Unable to generate flatpak install script. Unimplemented Package Manager." | tee -a "$LOGFILE"
             exit 5
     esac
     RECOMMENDREBOOT="yes"
@@ -121,7 +161,7 @@ function generate_packages_install_script() {
     # Generate shell script to install each flatpak in turn
     # TODO: Should also wrap each install to detect if it fails, and stop to cope
     # with error situations like disk full.
-    echo "INFO: Generating flatpaks installer script in $INSTALLPACKAGESSCRIPT" | tee -a "$LOGFILE"
+    echo -e "${GREEN}INFO:${NC} Generating flatpaks installer script in $INSTALLPACKAGESSCRIPT" | tee -a "$LOGFILE"
     echo "$SHEBANG" > "$INSTALLPACKAGESSCRIPT"
     echo -n "for f in " >> "$INSTALLPACKAGESSCRIPT"
     while IFS="" read -r p || [ -n "$p" ]
@@ -129,7 +169,7 @@ function generate_packages_install_script() {
         snap=$p
         flatpak=$(grep "^$p" "$APPLIST" | awk -F ',' '{ print $2}')
         if [ "$flatpak" == "" ]; then
-            echo "WARNING: No equivalent flatpak for $snap found" | tee -a "$LOGFILE"
+            echo -e "${YELLOW}WARNING:${NC} No equivalent flatpak for $snap found" | tee -a "$LOGFILE"
             echo "$snap" >> "$MISSINGFLATPAK"
         else
             echo -n "$flatpak " >> "$INSTALLPACKAGESSCRIPT"
@@ -144,19 +184,19 @@ function generate_packages_install_script() {
 
 function generate_flathub_enablement_script() {
     # Generate short script to enable flathub which is required if
-    # the user hasn't already enabled it as (currently) all the applications we 
+    # the user hasn't already enabled it as (currently) all the applications we
     # install are from flathub - but this could change in the future.
     # flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-    echo "INFO: Generating flathub enablement script in $ENABLEFLATHUBSRIPT" | tee -a "$LOGFILE"
-    echo "$SHEBANG" > "$ENABLEFLATHUBSRIPT" 
+    echo -e "${GREEN}INFO:${NC} Generating flathub enablement script in $ENABLEFLATHUBSRIPT" | tee -a "$LOGFILE"
+    echo "$SHEBANG" > "$ENABLEFLATHUBSRIPT"
     echo "sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo" >> "$ENABLEFLATHUBSRIPT"
     chmod +x "$ENABLEFLATHUBSRIPT"
 }
 
 function generate_remove_snaps_script() {
     # Generate a shell script to remove each snap in turn.
-    echo "INFO: Generating snap removal script in $REMOVESNAPSSCRIPT" | tee -a "$LOGFILE"
-    echo "$SHEBANG" > "$REMOVESNAPSSCRIPT" 
+    echo -e "${GREEN}INFO:${NC} Generating snap removal script in $REMOVESNAPSSCRIPT" | tee -a "$LOGFILE"
+    echo "$SHEBANG" > "$REMOVESNAPSSCRIPT"
     echo -n "for s in " >> "$REMOVESNAPSSCRIPT"
     # Iterate through the filtered list of snaps (that is snaps which aren't excluded from matching)
     while IFS="" read -r p || [ -n "$p" ]
@@ -183,15 +223,30 @@ function generate_remove_snapd_script() {
     # Note that currently we assume sudo, but for some distros, that won't work
     # so we might be better off removing all references to sudo, and inform the user
     # to run the script as "root user or sudo as appropriate".
-    echo "INFO: Generating snapd removal script in $REMOVESNAPDSCRIPT" | tee -a "$LOGFILE"
-    echo "$SHEBANG" > "$REMOVESNAPDSCRIPT" 
-    echo "echo Removing snapd" >> "$REMOVESNAPDSCRIPT" 
-    case $DISTRO in
-        debian|ubuntu|linuxmint|pop|elementary|zorin)
+    echo -e "${GREEN}INFO:${NC} Generating snapd removal script in $REMOVESNAPDSCRIPT" | tee -a "$LOGFILE"
+    echo "$SHEBANG" > "$REMOVESNAPDSCRIPT"
+    echo "echo Removing snapd" >> "$REMOVESNAPDSCRIPT"
+    case $PACKAGEMGR in
+        apt)
             echo "sudo apt remove snapd" >> "$REMOVESNAPDSCRIPT"
             ;;
+        pacman)
+            echo "sudo pacman -Rsn snapd" >> "$REMOVESNAPDSCRIPT"
+            ;;
+        zypper)
+            echo "sudo zypper remove snapd" >> "$REMOVESNAPDSCRIPT"
+            ;;
+        dnf)
+            echo "sudo dnf remove snapd" >> "$REMOVESNAPDSCRIPT"
+            ;;
+        yum)
+            echo "sudo yum remove snapd" >> "$REMOVESNAPDSCRIPT"
+            ;;
+        eopkg)
+            echo "sudo eopkg remove snapd" >> "$REMOVESNAPDSCRIPT"
+            ;;
         *)
-            echo "ERROR: Unable to generate snapd removal script. Unimplemented distro." | tee -a "$LOGFILE"
+           echo -e "${RED}ERROR:${NC} Unable to generate snapd removal script. Unimplemented package manager." | tee -a "$LOGFILE"
     esac
     chmod +x "$REMOVESNAPDSCRIPT"
 }
@@ -202,8 +257,8 @@ function generate_backup_script() {
     # might run the 'remove snapd' script, which will nuke all their snaps, not just migrated
     # ones.
     # Not all snaps store data in their own directory - classic snaps being a good culprit
-    echo "INFO: Generating snap backup script in $BACKUPSCRIPT"  | tee -a "$LOGFILE"
-    echo "$SHEBANG" > "$BACKUPSCRIPT" 
+    echo -e "${GREEN}INFO:${NC} Generating snap backup script in $BACKUPSCRIPT"  | tee -a "$LOGFILE"
+    echo "$SHEBANG" > "$BACKUPSCRIPT"
     echo "# Documentation: https://snapcraft.io/docs/snapshots" >> "$BACKUPSCRIPT"
     echo -n "sudo snap save " >> "$BACKUPSCRIPT"
     while IFS="" read -r p || [ -n "$p" ]
@@ -216,55 +271,54 @@ function generate_backup_script() {
 }
 
 function check_for_flatpak() {
-    # Check if the flatpak binary exists, and if it doesn't call 
+    # Check if the flatpak binary exists, and if it doesn't call
     # function to generate a script to install flatpak
-    echo "INFO: Checking for flatpak binary" | tee -a "$LOGFILE"
+    echo -e "${GREEN}INFO:${NC} Checking for flatpak binary" | tee -a "$LOGFILE"
     if [ -x "$(command -v flatpak)" ]; then
-        echo "INFO: flatpak found no need to generate flatpak install script" | tee -a "$LOGFILE"
+        echo -e "${GREEN}INFO:${NC} flatpak found no need to generate flatpak install script" | tee -a "$LOGFILE"
         check_for_flathub
     else
-        echo "INFO: flatpak doesn't appear to be installed, adding installer script and enabling flathub" | tee -a "$LOGFILE"
+        echo -e "${GREEN}INFO:${NC} flatpak doesn't appear to be installed, adding installer script and enabling flathub" | tee -a "$LOGFILE"
         generate_flatpak_install_script
         generate_flathub_enablement_script
     fi
 }
 
 function check_for_flathub() {
-    # Check if flathub is a configured remote and if not, call function to 
+    # Check if flathub is a configured remote and if not, call function to
     # generate a script which enables it.
-    echo "INFO: Checking for flathub remote" | tee -a "$LOGFILE"
+    echo -e "${GREEN}INFO:${NC} Checking for flathub remote" | tee -a "$LOGFILE"
     if flatpak remotes | grep flathub > /dev/null; then
-        echo "INFO: flathub already enabled" |  tee -a "$LOGFILE"
+        echo -e "${GREEN}INFO:${NC} flathub already enabled" |  tee -a "$LOGFILE"
     else
-        echo "INFO: flathub doesn't appear to be enabled" |  tee -a "$LOGFILE"
+        echo -e "${GREEN}INFO:${NC} flathub doesn't appear to be enabled" |  tee -a "$LOGFILE"
         generate_flathub_enablement_script
     fi
 }
 
-function determine_distro() {
-    # Figure out what distro we're running on so we can use appropriate commands
+function determine_packagemanager() {
+    # Figure out what package manager is base to the current system on so we can use appropriate commands
     # later for installing / removing snapd and installing flatpak
-    # TODO: Add more distros
-    CANDIDATE=$(grep -w ID /etc/os-release | awk -F "=" '{ print $2} ')
-    case $CANDIDATE in
-        debian|ubuntu|linuxmint|pop|elementary|zorin)
-            DISTRO="$CANDIDATE"
+    PACKAGEMGR=$(command -v {apt,pacman} | sed "s/.*\///")
+    case $PACKAGEMGR in
+        apt|pacman|zypper|dnf|yum|eopkg)
+            PACKAGEMGR="$PACKAGEMGR"
             ;;
         *)
-            echo "ERROR: Running on unknown distro, '$CANDIDATE' aborting" | tee -a "$LOGFILE"
+           echo -e "${RED}ERROR:${NC} Could not determine appropriate package manager, '$PACKAGEMGR' aborting" | tee -a "$LOGFILE"
             exit 2
             ;;
     esac
-    echo "INFO: Detected $DISTRO" | tee -a "$LOGFILE"
+    echo -e "${GREEN}INFO:${NC} Detected $PACKAGEMGR as package manager" | tee -a "$LOGFILE"
 }
 
 function get_installed_snaps() {
     # Get list of currently installed snaps on this machine
     # Then filter out excluded snaps, for which we know there is no
     # equivalent in flathub (such as platform / theme snaps)
-    echo "INFO! Getting list of installed snaps to $INSTALLEDSNAPLIST" | tee -a "$LOGFILE"
+    echo -e "${GREEN}INFO:${NC} Getting list of installed snaps to $INSTALLEDSNAPLIST" | tee -a "$LOGFILE"
     snap list | tail -n +2 | awk -F " " '{ print $1 }' > "$INSTALLEDSNAPLIST"
-    echo "INFO! Trimming list of installed snaps to $FILTEREDSNAPLIST" | tee -a "$LOGFILE"
+    echo -e "${GREEN}INFO:${NC} Trimming list of installed snaps to $FILTEREDSNAPLIST" | tee -a "$LOGFILE"
     grep -v -f "$EXCLUDEDSNAPLIST" "$INSTALLEDSNAPLIST" > "$FILTEREDSNAPLIST"
 }
 
@@ -275,60 +329,56 @@ function cleanup() {
 
 function run_scripts() {
     # Run the actual scripts one by one, stopping on error
-    echo "INFO: Running backup" | tee -a "$LOGFILE"
+    echo -e "${GREEN}INFO:${NC} Running backup" | tee -a "$LOGFILE"
     if "$BACKUPSCRIPT"; then
-        echo "INFO: Backup finished" | tee -a "$LOGFILE"
+        echo -e "${GREEN}INFO:${NC} Backup finished" | tee -a "$LOGFILE"
     else
-        echo "ERROR: Backup failed" | tee -a "$LOGFILE"
+       echo -e "${RED}ERROR:${NC} Backup failed" | tee -a "$LOGFILE"
         exit 10
     fi
     if test -f "$INSTALLFLATPACKSCRIPT"; then
-        echo "INFO: Installing flatpak" | tee -a "$LOGFILE"
+        echo -e "${GREEN}INFO:${NC} Installing flatpak" | tee -a "$LOGFILE"
         if "$INSTALLFLATPACKSCRIPT"; then
-            echo "INFO: Installing flatpak finished" | tee -a "$LOGFILE"
+            echo -e "${GREEN}INFO:${NC} Installing flatpak finished" | tee -a "$LOGFILE"
         else
-            echo "ERROR: Install flatpak failed" | tee -a "$LOGFILE"
+           echo -e "${RED}ERROR:${NC} Install flatpak failed" | tee -a "$LOGFILE"
             exit 11
         fi
     else
-        echo "INFO: Skipping installing flatpak, already installed" | tee -a "$LOGFILE"
+        echo -e "${GREEN}INFO:${NC} Skipping installing flatpak, already installed" | tee -a "$LOGFILE"
     fi
     if test -f "$ENABLEFLATHUBSRIPT"; then
-        echo "INFO: Enabling flathub" | tee -a "$LOGFILE"
+        echo -e "${GREEN}INFO:${NC} Enabling flathub" | tee -a "$LOGFILE"
         if "$ENABLEFLATHUBSRIPT"; then
-            echo "INFO: Flathub enabled" | tee -a "$LOGFILE"
+            echo -e "${GREEN}INFO:${NC} Flathub enabled" | tee -a "$LOGFILE"
         else
-            echo "ERROR: Enabling flathub failed" | tee -a "$LOGFILE"
+           echo -e "${RED}ERROR:${NC} Enabling flathub failed" | tee -a "$LOGFILE"
             exit 12
         fi
     else
-        echo "INFO: Skipping enabling flathub, already enabled" | tee -a "$LOGFILE"
+        echo -e "${GREEN}INFO:${NC} Skipping enabling flathub, already enabled" | tee -a "$LOGFILE"
     fi
-    echo "INFO: Installing flatpak packages" | tee -a "$LOGFILE"
+    echo -e "${GREEN}INFO:${NC} Installing flatpak packages" | tee -a "$LOGFILE"
     if "$INSTALLPACKAGESSCRIPT"; then
-        echo "INFO: flatpaks installed" | tee -a "$LOGFILE"
-        echo "INFO: These flatpaks are now installed:" | tee -a "$LOGFILE"
-        flatpak list | tee -a "$LOGFILE"
+        echo -e "${GREEN}INFO:${NC} flatpaks installed" | tee -a "$LOGFILE"
     else
-        echo "ERROR: Failed to install flatpaks" | tee -a "$LOGFILE"
+       echo -e "${RED}ERROR:${NC} Failed to install flatpaks" | tee -a "$LOGFILE"
         exit 13
     fi
-    echo "INFO: Removing snaps" | tee -a "$LOGFILE"
+    echo -e "${GREEN}INFO:${NC} Removing snaps" | tee -a "$LOGFILE"
     if "$REMOVESNAPSSCRIPT"; then
-        echo "INFO: Snaps removed" | tee -a "$LOGFILE"
-        echo "WARNING: These snaps are still installed:" | tee -a "$LOGFILE"
-        snap list | tee -a "$LOGFILE"
+        echo -e "${GREEN}INFO:${NC} Snaps removed" | tee -a "$LOGFILE"
     else
-        echo "ERROR: Failed to remove snaps" | tee -a "$LOGFILE"
+       echo -e "${RED}ERROR:${NC} Failed to remove snaps" | tee -a "$LOGFILE"
         exit 14
     fi
-    # echo "INFO: Removing snapd daemon" | tee -a "$LOGFILE"
-    # if "$REMOVESNAPDSCRIPT"; then
-    #     echo "INFO: snapd removed" | tee -a "$LOGFILE"
-    # else
-    #     echo "ERROR: Failed to remove snapd" | tee -a "$LOGFILE"
-    #     exit 15
-    # fi
+    echo -e "${GREEN}INFO:${NC} Removing snapd daemon" | tee -a "$LOGFILE"
+#    if "$REMOVESNAPDSCRIPT"; then
+#        echo -e "${GREEN}INFO:${NC} snapd removed" | tee -a "$LOGFILE"
+#    else
+#       echo -e "${RED}ERROR:${NC} Failed to remove snapd" | tee -a "$LOGFILE"
+#        exit 15
+#    fi
 }
 
 function recommend_reboot() {
@@ -337,18 +387,20 @@ function recommend_reboot() {
     fi
 }
 
+
 setup_environment
 if [ "$1" == "check" ]; then
     create_logdir
-    echo "INFO: Check requested" | tee -a "$LOGFILE"
+    echo -e "${GREEN}INFO:${NC} Check requested" | tee -a "$LOGFILE"
     check_applist
 else
     display_warnings
     create_logdir
 fi
-determine_distro
+
 check_for_snap # this should be universal, so we can check for the binary earlier for check_snap
 check_for_flatpak # this should be universal check maybe, so it can be checked in "check_flatpak"
+determine_packagemanager
 get_installed_snaps
 generate_backup_script
 generate_packages_install_script
@@ -356,7 +408,7 @@ generate_remove_snaps_script
 generate_remove_snapd_script
 cleanup
 if [ "$1" == "auto" ]; then
-    echo "INFO: Auto requested" | tee -a "$LOGFILE"
+    echo -e "${GREEN}INFO:${NC} Auto requested" | tee -a "$LOGFILE"
     run_scripts
     recommend_reboot
 fi
